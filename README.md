@@ -3,9 +3,9 @@
 A basic modified version of Auth0 quick start app
 
 
-This is the sample code for the [Auth0 Android Quickstart](https://auth0.com/docs/quickstart/native/android) using the [Auth0 Android SDK](https://github.com/auth0/Auth0.Android).
+This is the sample code from the [Auth0 Android Quickstart](https://auth0.com/docs/quickstart/native/android) using the [Auth0 Android SDK](https://github.com/auth0/Auth0.Android).
 
-The Java sample is complete. 00-Login.
+The Java sample is complete to handle our PBS demo. Load in 00-Login.
 
 
 ## License
