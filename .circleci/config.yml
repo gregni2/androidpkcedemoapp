@@ -1,0 +1,156 @@
+version: 2.1
+
+## Required environment variables:
+#    - AUTH0_CLIENT_ID
+#    - AUTH0_DOMAIN
+#    - BS_USER
+#    - BS_KEY
+
+executors:
+  android:
+    docker:
+      - image: circleci/android:api-30
+    environment:
+      - JVM_OPTS: -Xmx3200m
+      - AUTH0_CONFIG: strings.xml
+      - GRADLE_OPTS: -Dkotlin.compiler.execution.strategy=in-process
+  python3:
+    docker:
+      - image: circleci/python:3.7
+
+commands:
+  build-sample:
+    description: "Set up the project and its dependencies, finally build an APK"
+    parameters:
+      sample:
+        type: string
+    steps:
+      - checkout
+      - restore_cache:
+          key: jars-{{ checksum  "<<parameters.sample>>/app/build.gradle" }}
+      - run:
+          name: Setup Auth0 environment
+          working_directory: <<parameters.sample>>/app/src/main/res/values/
+          command: |
+            mv $AUTH0_CONFIG.example $AUTH0_CONFIG
+            sed -i 's/{CLIENT_ID}/'$AUTH0_CLIENT_ID'/g' $AUTH0_CONFIG
+            sed -i 's/{DOMAIN}/'$AUTH0_DOMAIN'/g' $AUTH0_CONFIG
+            cat $AUTH0_CONFIG
+      - run:
+          name: Build APK          
+          command: cd <<parameters.sample>> && ./gradlew assembleDebug
+      - save_cache:
+          key: jars-{{ checksum  "<<parameters.sample>>/app/build.gradle" }}
+          paths:
+            - ~/.gradle
+      - run:
+          name: Export APK
+          command: |
+            mkdir -p out/<<parameters.sample>>
+            mv <<parameters.sample>>/app/build/outputs/apk/debug/app-debug.apk out/<<parameters.sample>>/app-debug.apk
+      - persist_to_workspace:
+          root: .
+          paths:
+            - out
+
+
+  setup-python-context:
+    description: "Installs the test scripts and its dependencies"
+    steps:
+      - run: |
+          git clone https://github.com/auth0-samples/mobile-quickstarts-tests scripts
+          sudo chown -R circleci:circleci /usr/local/bin
+          sudo chown -R circleci:circleci /usr/local/lib/python3.7/site-packages
+      - restore_cache:
+          key: pip-{{ checksum  "scripts/requirements.txt" }}
+      - run:
+          name: Installing pip dependencies
+          command: |
+            sudo pip3 install -r scripts/requirements.txt
+      - run:
+          name: Setup Browserstack credentials
+          working_directory: scripts
+          command : |
+            mv browserstack.py.example browserstack.py
+            sed -i 's/{user_name}/'$BS_USER'/g' browserstack.py
+            sed -i 's/{access_key}/'$BS_KEY'/g' browserstack.py
+      - save_cache:
+          key: pip-{{ checksum  "scripts/requirements.txt" }}
+          paths:
+            - ".venv"
+            - "/usr/local/bin"
+            - "/usr/local/lib/python3.7/site-packages"
+
+  test-sample:
+    description: "Uploads an APK to BrowserStack and runs the tests"
+    parameters:
+      sample:
+        type: string
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name : Upload APK to BrowserStack
+          command : |
+            APP_UPLOAD_RESPONSE=$(curl -u "$BS_USER:$BS_KEY" -X POST "https://api-cloud.browserstack.com/app-automate/upload" -F "file=@out/<<parameters.sample>>/app-debug.apk" -F "data={\"custom_id\": \"Auth0\"}")
+            APP_ID=$(echo $APP_UPLOAD_RESPONSE | jq -r ".app_url")
+            if [ $APP_ID != null ]; then
+              echo "Apk uploaded to BrowserStack with app id : ",$APP_ID;
+              echo "export BROWSERSTACK_APP_ID=$APP_ID" >> $BASH_ENV;
+              source $BASH_ENV;
+              echo "Setting value of BROWSERSTACK_APP_ID in environment variables to  ",$APP_ID;
+            else
+              UPLOAD_ERROR_MESSAGE=$(echo $APP_UPLOAD_RESPONSE | jq -r ".error")
+              echo "App upload failed, reason : ",$UPLOAD_ERROR_MESSAGE
+              exit 1; 
+            fi
+      - run:
+          name: Execute test
+          command: python3 -m pytest scripts/test_app_android.py
+
+jobs:
+  #00-Login
+  android_00-build:
+    executor:
+      name: android
+    steps:
+      - build-sample:
+          sample: "00-Login"
+  android_00_kt-build:
+    executor:
+      name: android
+    steps:
+      - build-sample:
+          sample: "00-Login-Kt"
+  android_00-integration-tests:
+    executor:
+      name: python3
+    steps:
+      - setup-python-context
+      - test-sample:
+          sample: "00-Login"
+  android_00_kt-integration-tests:
+    executor:
+      name: python3
+    steps:
+      - setup-python-context
+      - test-sample:
+          sample: "00-Login-Kt"
+workflows:
+  version: 2
+  android_00:
+    jobs:
+      - android_00-build:
+          context: Quickstart MOBILE Test
+      - android_00-integration-tests:
+          context: Quickstart MOBILE Test
+          requires:
+            - android_00-build
+  android_00_kt:
+    jobs:
+      - android_00_kt-build:
+          context: Quickstart MOBILE Test
+      - android_00_kt-integration-tests:
+          context: Quickstart MOBILE Test
+          requires:
+            - android_00_kt-build

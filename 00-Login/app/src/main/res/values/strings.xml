@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">AndroidOAuthTest</string>
+    <string name="com_auth0_client_id">k2VW3vVA3LPpYhTeIVrBl3y7MRLiO98k</string>
+    <string name="com_auth0_domain">dev-zba18q3c.us.auth0.com</string>
+    <string name="login">PBS Log in</string>
+    <string name="logout">PBS Log out</string>
+</resources>
